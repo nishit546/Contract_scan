@@ -1,0 +1,34 @@
+{
+    "manifest_version": 3,
+    "name": "AI Contract Risk Scanner",
+    "version": "1.0",
+    "description": "Scans contracts for risky clauses using AI.",
+    "permissions": [
+        "sidePanel",
+        "scripting",
+        "activeTab"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "src/background.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "src/content.js"
+            ]
+        }
+    ],
+    "action": {
+        "default_title": "Scan Contract"
+    },
+    "side_panel": {
+        "default_path": "index.html"
+    }
+}
