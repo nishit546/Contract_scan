@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Shield, AlertTriangle, CheckCircle, FileText, Search, RefreshCw, ChevronRight } from 'lucide-react';
 import './App.css'
 
 function App() {
@@ -12,29 +13,25 @@ function App() {
     setResult(null);
 
     try {
-      // 1. Get current tab ID
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
       if (!tab?.id) {
         throw new Error("Could not identify current tab.");
       }
 
-      // 2. Execute script or send message to content script to get text
-      // We rely on content script already being injected via manifest
       const response = await chrome.tabs.sendMessage(tab.id, { action: "EXTRACT_TEXT" });
 
       if (!response || !response.text) {
-        throw new Error("Could not extract text from page. Try reloading the page.");
+        throw new Error("Could not extract text. Refresh the page and try again.");
       }
 
       const text = response.text;
-
       if (text.length < 50) {
-        throw new Error("Not enough text found to analyze.");
+        throw new Error("Page content is too short to analyze.");
       }
 
-      // 3. Send text to Backend
-      const apiResponse = await fetch('http://localhost:8000/scan', {
+      // Using the production Render URL
+      const apiResponse = await fetch('https://contract-scan.onrender.com/scan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -43,86 +40,119 @@ function App() {
       });
 
       if (!apiResponse.ok) {
-        throw new Error(`API Error: ${apiResponse.statusText}`);
+        throw new Error(`Analysis failed: ${apiResponse.statusText}`);
       }
 
       const data = await apiResponse.json();
       setResult(data);
 
-      // 4. Highlight risks
       if (data.risks && data.risks.length > 0) {
         chrome.tabs.sendMessage(tab.id, { action: "HIGHLIGHT_RISKS", risks: data.risks });
       }
 
     } catch (err) {
       console.error(err);
-      setError(err.message || "An error occurred.");
+      setError(err.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
   };
 
+  const getScoreColor = (score) => {
+    if (score >= 80) return '#10b981'; // Green
+    if (score >= 60) return '#f59e0b'; // Orange
+    return '#ef4444'; // Red
+  };
+
   return (
-    <div className="container">
-      <header>
-        <h1>AI Contract Scanner</h1>
+    <div className="app-container">
+      <header className="app-header">
+        <div className="logo">
+          <Shield size={20} className="logo-icon" />
+          <h1>RiskScanner</h1>
+        </div>
       </header>
 
-      <main>
+      <main className="app-content">
         {!result && !loading && (
-          <div className="start-screen">
-            <p>Open a contract or terms page and click scan.</p>
-            <button className="scan-btn" onClick={scanContract}>
-              Scan Now
+          <div className="empty-state">
+            <div className="icon-badge">
+              <FileText size={32} />
+            </div>
+            <h2>Scan this Contract</h2>
+            <p>Analyze legal text for hidden risks and dangerous clauses in seconds.</p>
+            <button className="btn-primary" onClick={scanContract}>
+              <Search size={18} />
+              Start Analysis
             </button>
           </div>
         )}
 
-        {loading && <div className="loader">Analyzing Contract...</div>}
+        {loading && (
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Analyzing document...</p>
+          </div>
+        )}
 
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error-card">
+            <AlertTriangle size={20} />
+            <p>{error}</p>
+          </div>
+        )}
 
         {result && (
-          <div className="results">
+          <div className="results-view">
+
+            {/* Score Card */}
             <div className="score-card">
-              <div className="score-circle" style={{ borderColor: getScoreColor(result.score) }}>
-                {result.score}
+              <div className="score-ring" style={{ '--score-color': getScoreColor(result.score) }}>
+                <span className="score-value">{result.score}</span>
+                <span className="score-label">Safety</span>
               </div>
-              <span>Safety Score</span>
+              <div className="score-status">
+                <h3>{result.score >= 80 ? 'Safe Contract' : result.score >= 60 ? 'Moderate Risk' : 'High Risk'}</h3>
+                <p>{result.risks.length} issues detected</p>
+              </div>
             </div>
 
-            <div className="summary">
-              <h3>Summary</h3>
-              <p>{result.summary}</p>
+            {/* Summary */}
+            <div className="section">
+              <div className="section-header">
+                <FileText size={16} />
+                <h3>Summary</h3>
+              </div>
+              <p className="summary-text">{result.summary}</p>
             </div>
 
-            <div className="risks">
-              <h3>Risks Found ({result.risks.length})</h3>
-              {result.risks.map((risk, index) => (
-                <div key={index} className={`risk-item ${risk.severity}`}>
-                  <div className="risk-header">
-                    <span className="risk-cat">{risk.category}</span>
-                    <span className="risk-sev">{risk.severity}</span>
+            {/* Risks */}
+            <div className="section">
+              <div className="section-header">
+                <AlertTriangle size={16} />
+                <h3>Risk Analysis</h3>
+              </div>
+              <div className="risk-list">
+                {result.risks.map((risk, index) => (
+                  <div key={index} className={`risk-card ${risk.severity}`}>
+                    <div className="risk-header">
+                      <span className="risk-tag">{risk.category}</span>
+                    </div>
+                    <p>{risk.description}</p>
                   </div>
-                  <p>{risk.description}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
-            <button className="scan-btn secondary" onClick={scanContract}>
-              Scan Again
+            <button className="btn-secondary" onClick={scanContract}>
+              <RefreshCw size={16} />
+              Scan New Document
             </button>
           </div>
         )}
       </main>
     </div>
   )
-}
-
-function getScoreColor(score) {
-  if (score >= 80) return '#4caf50';
-  if (score >= 60) return '#ff9800';
-  return '#f44336';
 }
 
 export default App
